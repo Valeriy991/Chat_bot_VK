@@ -5,7 +5,8 @@ COPY src ./src
 RUN mvn -q clean package
 
 FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /workspace/target/vk-trigger-bot-0.0.1-SNAPSHOT.jar app.jar
+WORKDIR /opt/vk-trigger-bot
+COPY --from=build /workspace/target/vk-trigger-bot-0.0.1-SNAPSHOT.jar /opt/vk-trigger-bot/app.jar
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-jar", "/opt/vk-trigger-bot/app.jar"]

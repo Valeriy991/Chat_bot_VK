@@ -12,7 +12,7 @@ management:
         include: health,info
 
 vk:
-  token: ${VK_GROUP_TOKEN:vk1.a.6vVLbtpBpohScuF6M4XAN8PHgFxlQYQxzoKosGQ0sKhQZM6FHJjsdIILnVqF7boPCuOizcKz0qRXx-1A8xuZ93ma9yttSRos0wQPHJdGpAkHG5LWSJmk1eCCbSw3pQQ2-dPqFsCSrQL9ybUa_HI7A1P7oz5x6ASz380MqwMh-9c8aK7SIEc97KBeGtZxugrhrwutXgpA7TyMzSfcEFyhOA}
+  token: ${VK_GROUP_TOKEN}
   group-id: ${VK_GROUP_ID:235381622}
   api-version: ${VK_API_VERSION:5.199}
   trigger-word: ${VK_TRIGGER_WORD:сила}
