@@ -38,6 +38,9 @@ public class VkConfigurationValidator {
         if (properties.nonMemberText() == null || properties.nonMemberText().isBlank()) {
             throw new IllegalStateException("VK_NON_MEMBER_TEXT must not be blank");
         }
+        if (properties.messagesDisabledCommentText() == null || properties.messagesDisabledCommentText().isBlank()) {
+            throw new IllegalStateException("VK_MESSAGES_DISABLED_COMMENT_TEXT must not be blank");
+        }
         if (properties.afterSubscriptionText() == null || properties.afterSubscriptionText().isBlank()) {
             throw new IllegalStateException("VK_AFTER_SUBSCRIPTION_TEXT must not be blank");
         }

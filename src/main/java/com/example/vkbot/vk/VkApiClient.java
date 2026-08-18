@@ -224,6 +224,24 @@ public class VkApiClient {
         call("messages.send", form);
     }
 
+    public void replyToWallComment(
+            long ownerId,
+            long postId,
+            long commentId,
+            String text,
+            String guid
+    ) {
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("owner_id", Long.toString(ownerId));
+        form.add("post_id", Long.toString(postId));
+        form.add("reply_to_comment", Long.toString(commentId));
+        form.add("from_group", "1");
+        form.add("message", text);
+        form.add("guid", guid);
+
+        call("wall.createComment", form);
+    }
+
     private JsonNode call(String method, MultiValueMap<String, String> form) {
         LinkedMultiValueMap<String, String> request = new LinkedMultiValueMap<>();
         request.addAll(form);
@@ -248,9 +266,9 @@ public class VkApiClient {
         if (root.has("error")) {
             JsonNode error = root.path("error");
             throw new VkApiException(
-                    "VK API error in " + method
-                            + ": code=" + error.path("error_code").asInt()
-                            + ", message=" + error.path("error_msg").asText()
+                    method,
+                    error.path("error_code").asInt(),
+                    error.path("error_msg").asText()
             );
         }
         return root;

@@ -18,6 +18,7 @@ class TriggerMatcherTest {
                     "reply",
                     "already sent",
                     "subscribe first",
+                    "enable messages",
                     "after subscription",
                     "classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf",
                     Duration.ofSeconds(3),

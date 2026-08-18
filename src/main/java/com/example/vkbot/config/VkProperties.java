@@ -13,6 +13,7 @@ public record VkProperties(
         String replyText,
         String alreadySentText,
         String nonMemberText,
+        String messagesDisabledCommentText,
         String afterSubscriptionText,
         String pdfPath,
         Duration retryDelay,

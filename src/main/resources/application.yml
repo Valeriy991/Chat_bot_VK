@@ -19,6 +19,7 @@ vk:
   reply-text: ${VK_REPLY_TEXT:Привет! Вот твой файл 👋}
   already-sent-text: ${VK_ALREADY_SENT_TEXT:Файл уже был отправлен вам ранее.}
   non-member-text: ${VK_NON_MEMBER_TEXT:Привет, хочу отправить тебе материал "Где мои силы?", но у тебя нет подписки. Чтобы получить, подпишись на моё сообщество.}
+  messages-disabled-comment-text: ${VK_MESSAGES_DISABLED_COMMENT_TEXT:Не могу отправить файл — у тебя закрыты сообщения от сообщества. Открой диалог https://vk.me/gulina_psy_vk, нажми «Начать» и отправь туда слово «сила».}
   after-subscription-text: ${VK_AFTER_SUBSCRIPTION_TEXT:Вот твой файл}
   pdf-path: ${VK_PDF_PATH:classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf}
   retry-delay: ${VK_RETRY_DELAY:PT3S}

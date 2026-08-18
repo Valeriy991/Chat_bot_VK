@@ -2,6 +2,7 @@ package com.example.vkbot.service;
 
 import com.example.vkbot.config.VkProperties;
 import com.example.vkbot.vk.VkApiClient;
+import com.example.vkbot.vk.VkApiException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,8 +15,10 @@ import org.springframework.core.io.ByteArrayResource;
 import java.time.Duration;
 
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -46,6 +49,7 @@ class VkMessageHandlerTest {
                 "Вот ваш файл",
                 "Файл уже отправлен",
                 "Сначала подпишитесь",
+                "Откройте сообщения сообщества и отправьте слово сила",
                 "После подписки — ваш файл",
                 "classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf",
                 Duration.ofSeconds(3),
@@ -70,6 +74,53 @@ class VkMessageHandlerTest {
 
         verify(vkApiClient).isGroupMember(USER_ID);
         verify(vkApiClient).uploadDocumentForMessages(USER_ID, pdfResourceProvider.get());
+        verify(vkApiClient).sendMessage(
+                eq(USER_ID),
+                eq("Вот ваш файл"),
+                eq("doc-123_1_key"),
+                anyInt()
+        );
+    }
+
+    @Test
+    void shouldPostCommentInstructionsAndConsumeEventWhenMessagesAreNotAllowed() {
+        when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
+        when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
+        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+                .thenReturn("doc-123_1_key");
+        doThrow(new VkApiException("messages.send", 901, "Can't send messages for users without permission"))
+                .when(vkApiClient)
+                .sendMessage(eq(USER_ID), eq("Вот ваш файл"), eq("doc-123_1_key"), anyInt());
+
+        JsonNode update = commentUpdate(10, "сила");
+        handler.handle(update);
+        handler.handle(update);
+
+        verify(vkApiClient, times(1)).sendMessage(
+                eq(USER_ID),
+                eq("Вот ваш файл"),
+                eq("doc-123_1_key"),
+                anyInt()
+        );
+        verify(vkApiClient, times(1)).replyToWallComment(
+                eq(-GROUP_ID),
+                eq(7L),
+                eq(10L),
+                eq("Откройте сообщения сообщества и отправьте слово сила"),
+                anyString()
+        );
+    }
+
+    @Test
+    void shouldSendPdfWhenTriggerArrivesInDirectMessage() {
+        when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
+        when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
+        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+                .thenReturn("doc-123_1_key");
+
+        handler.handle(directMessageUpdate(42, "СИЛА"));
+
+        verify(vkApiClient).isGroupMember(USER_ID);
         verify(vkApiClient).sendMessage(
                 eq(USER_ID),
                 eq("Вот ваш файл"),
@@ -235,5 +286,19 @@ class VkMessageHandlerTest {
                 .set("object", objectMapper.createObjectNode()
                         .put("user_id", userId)
                         .put("join_type", "join"));
+    }
+
+    private JsonNode directMessageUpdate(long messageId, String text) {
+        return objectMapper.createObjectNode()
+                .put("type", "message_new")
+                .put("event_id", "message-event-" + messageId)
+                .put("group_id", GROUP_ID)
+                .set("object", objectMapper.createObjectNode()
+                        .set("message", objectMapper.createObjectNode()
+                                .put("id", messageId)
+                                .put("conversation_message_id", messageId)
+                                .put("from_id", USER_ID)
+                                .put("peer_id", USER_ID)
+                                .put("text", text)));
     }
 }
