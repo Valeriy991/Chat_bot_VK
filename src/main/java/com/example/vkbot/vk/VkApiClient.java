@@ -123,6 +123,7 @@ public class VkApiClient {
     private String uploadDocumentOnce(Resource pdf) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("type", "doc");
+        form.add("peer_id", Integer.toString(communityMessagesPeerId(properties.groupId())));
 
         JsonNode uploadServerResponse = call("docs.getMessagesUploadServer", form).path("response");
         String uploadUrl = requiredText(uploadServerResponse, "upload_url");
@@ -294,5 +295,12 @@ public class VkApiClient {
             throw new VkApiException("Required VK response field is missing: " + field + "; payload=" + node);
         }
         return node.path(field).asLong();
+    }
+
+    static int communityMessagesPeerId(long groupId) {
+        if (groupId <= 0 || groupId > Integer.MAX_VALUE) {
+            throw new VkApiException("VK group ID must be a positive int32 value for document upload: " + groupId);
+        }
+        return Math.toIntExact(-groupId);
     }
 }

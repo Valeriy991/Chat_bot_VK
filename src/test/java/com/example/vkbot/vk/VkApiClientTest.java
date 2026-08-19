@@ -25,4 +25,9 @@ class VkApiClientTest {
 
         assertEquals(URI.create(uploadUrl), VkApiClient.normalizeUploadUri(uploadUrl));
     }
+
+    @Test
+    void shouldUseNegativeCommunityIdAsMessagesUploadPeer() {
+        assertEquals(-235_381_622, VkApiClient.communityMessagesPeerId(235_381_622L));
+    }
 }
