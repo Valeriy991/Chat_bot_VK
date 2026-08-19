@@ -54,6 +54,15 @@ public class VkMessageHandler {
         this.vkApiClient = vkApiClient;
         this.properties = properties;
         this.sharedAttachment = configuredAttachment(properties.pdfAttachment());
+        if (sharedAttachment != null) {
+            log.info("PDF delivery configured with pre-uploaded VK_PDF_ATTACHMENT; runtime upload is disabled");
+        } else {
+            log.info(
+                    "PDF delivery configured for runtime upload; configuredUploadPeerId={} "
+                            + "recipient peer will be tried first and all IDs are handled as long",
+                    properties.uploadPeerId()
+            );
+        }
     }
 
     public void handle(JsonNode update) {
@@ -330,7 +339,7 @@ public class VkMessageHandler {
         synchronized (attachmentLock) {
             if (sharedAttachment == null) {
                 log.info("Uploading PDF to VK for the first delivery; userId={}", userId);
-                sharedAttachment = vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get());
+                sharedAttachment = vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get(), userId);
                 log.info("PDF successfully uploaded and saved by VK");
             }
             return sharedAttachment;
@@ -353,11 +362,27 @@ public class VkMessageHandler {
     }
 
     private void notifyPermanentDeliveryFailure(long userId, TriggerEventKey eventKey, RuntimeException failure) {
-        log.error(
-                "PDF delivery cannot continue with the current VK upload configuration; "
-                        + "set VK_PDF_ATTACHMENT or a valid VK_UPLOAD_PEER_ID; event will not be retried",
-                failure
-        );
+        if (failure instanceof VkApiException apiFailure) {
+            log.error(
+                    "PDF delivery exhausted all VK upload strategies userId={} configuredUploadPeerId={} "
+                            + "finalApiMethod={} finalApiCode={}; set VK_PDF_ATTACHMENT if VK rejects every "
+                            + "runtime upload target; event will not be retried",
+                    userId,
+                    properties.uploadPeerId(),
+                    apiFailure.method(),
+                    apiFailure.errorCode(),
+                    failure
+            );
+        } else {
+            log.error(
+                    "PDF delivery failed before VK upload completed userId={} configuredUploadPeerId={} "
+                            + "failureType={}; event will not be retried",
+                    userId,
+                    properties.uploadPeerId(),
+                    failure.getClass().getSimpleName(),
+                    failure
+            );
+        }
         sendMessageOrHandleDenied(
                 userId,
                 properties.deliveryUnavailableText(),

@@ -23,6 +23,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 @Component
@@ -99,20 +101,77 @@ public class VkApiClient {
         return response;
     }
 
-    public String uploadDocumentForMessages(Resource pdf) {
+    public String uploadDocumentForMessages(Resource pdf, long recipientPeerId) {
+        if (recipientPeerId <= 0) {
+            throw new IllegalArgumentException("Recipient peer ID must be positive: " + recipientPeerId);
+        }
+
+        List<Long> uploadPeerCandidates = uploadPeerCandidates(recipientPeerId, properties.uploadPeerId());
+        log.info(
+                "Starting VK PDF upload fileName={} contentLength={} recipientPeerId={} "
+                        + "configuredUploadPeerId={} peerCandidates={}",
+                Objects.requireNonNullElse(pdf.getFilename(), "<unknown>"),
+                safeContentLength(pdf),
+                recipientPeerId,
+                properties.uploadPeerId(),
+                uploadPeerCandidates
+        );
+
+        List<VkApiException> rejectedPeers = new ArrayList<>();
+        for (long uploadPeerId : uploadPeerCandidates) {
+            try {
+                return uploadDocumentWithRetries(pdf, UploadTarget.messages(uploadPeerId));
+            } catch (VkApiException e) {
+                if (!isUploadPeerRejected(e)) {
+                    throw e;
+                }
+                rejectedPeers.add(e);
+                log.warn(
+                        "VK rejected messages document upload peerId={} apiMethod={} apiCode={}; "
+                                + "trying the next upload strategy",
+                        uploadPeerId,
+                        e.method(),
+                        e.errorCode()
+                );
+            }
+        }
+
+        log.warn(
+                "All messages upload peer candidates were rejected; trying wall upload for communityId={}",
+                properties.groupId()
+        );
+        try {
+            return uploadDocumentWithRetries(pdf, UploadTarget.wall(properties.groupId()));
+        } catch (RuntimeException wallFailure) {
+            rejectedPeers.forEach(wallFailure::addSuppressed);
+            throw wallFailure;
+        }
+    }
+
+    private String uploadDocumentWithRetries(Resource pdf, UploadTarget target) {
         RuntimeException lastFailure = null;
         for (int attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
             try {
-                return uploadDocumentOnce(pdf);
+                log.info(
+                        "VK PDF upload attempt {}/{} targetType={} targetId={}",
+                        attempt,
+                        MAX_UPLOAD_ATTEMPTS,
+                        target.type(),
+                        target.id()
+                );
+                return uploadDocumentOnce(pdf, target);
             } catch (RuntimeException e) {
                 if (!isTransientUploadFailure(e) || attempt == MAX_UPLOAD_ATTEMPTS) {
                     throw e;
                 }
                 lastFailure = e;
                 log.info(
-                        "Transient VK upload response on attempt {}/{}; retrying with a fresh upload URL",
+                        "Transient VK upload response on attempt {}/{} for targetType={} targetId={}; "
+                                + "retrying with a fresh upload URL",
                         attempt,
-                        MAX_UPLOAD_ATTEMPTS
+                        MAX_UPLOAD_ATTEMPTS,
+                        target.type(),
+                        target.id()
                 );
                 sleepBeforeUploadRetry();
             }
@@ -120,11 +179,19 @@ public class VkApiClient {
         throw new VkApiException("VK document upload failed after retries", lastFailure);
     }
 
-    private String uploadDocumentOnce(Resource pdf) {
-        JsonNode uploadServerResponse = getDocumentUploadServer();
+    private String uploadDocumentOnce(Resource pdf, UploadTarget target) {
+        JsonNode uploadServerResponse = getDocumentUploadServer(target);
         String uploadUrl = requiredText(uploadServerResponse, "upload_url");
         URI originalUploadUri = URI.create(uploadUrl);
         URI uploadUri = normalizeUploadUri(uploadUrl);
+
+        log.info(
+                "VK upload server received targetType={} targetId={} uploadHost={} normalizedUploadHost={}",
+                target.type(),
+                target.id(),
+                originalUploadUri.getHost(),
+                uploadUri.getHost()
+        );
 
         MultipartBodyBuilder multipart = new MultipartBodyBuilder();
         multipart.part("file", pdf)
@@ -146,6 +213,7 @@ public class VkApiClient {
         if (uploadResponse == null || uploadResponse.path("file").asText().isBlank()) {
             throw new VkApiException("VK upload server did not return the 'file' field: " + uploadResponse);
         }
+        log.info("PDF bytes accepted by VK upload server; saving document metadata");
 
         MultiValueMap<String, String> saveForm = new LinkedMultiValueMap<>();
         saveForm.add("file", uploadResponse.path("file").asText());
@@ -163,20 +231,62 @@ public class VkApiClient {
         if (!accessKey.isBlank()) {
             attachment += "_" + accessKey;
         }
+        log.info(
+                "VK document saved ownerId={} documentId={} accessKeyPresent={}",
+                ownerId,
+                documentId,
+                !accessKey.isBlank()
+        );
         return attachment;
     }
 
-    private JsonNode getDocumentUploadServer() {
-        if (properties.uploadPeerId() > 0) {
+    private JsonNode getDocumentUploadServer(UploadTarget target) {
+        if (target.type() == UploadTargetType.MESSAGES) {
             MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
             form.add("type", "doc");
-            form.add("peer_id", messagesUploadPeerId(properties.uploadPeerId()));
+            form.add("peer_id", messagesUploadPeerId(target.id()));
+            log.info(
+                    "Calling docs.getMessagesUploadServer with peerId={} exceedsLegacyInt32={}",
+                    target.id(),
+                    target.id() > Integer.MAX_VALUE
+            );
             return call("docs.getMessagesUploadServer", form).path("response");
         }
 
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("group_id", wallUploadGroupId(properties.groupId()));
+        form.add("group_id", wallUploadGroupId(target.id()));
+        log.info("Calling docs.getWallUploadServer with groupId={}", target.id());
         return call("docs.getWallUploadServer", form).path("response");
+    }
+
+    private static boolean isUploadPeerRejected(VkApiException failure) {
+        return failure.isApiError("docs.getMessagesUploadServer", 15)
+                || failure.isApiError("docs.getMessagesUploadServer", 27)
+                || failure.isApiError("docs.getMessagesUploadServer", 100)
+                || failure.isApiError("docs.getMessagesUploadServer", 113)
+                || failure.isApiError("docs.getMessagesUploadServer", 901);
+    }
+
+    static List<Long> uploadPeerCandidates(long recipientPeerId, long configuredUploadPeerId) {
+        if (recipientPeerId <= 0) {
+            throw new IllegalArgumentException("Recipient peer ID must be positive: " + recipientPeerId);
+        }
+
+        List<Long> candidates = new ArrayList<>(2);
+        candidates.add(recipientPeerId);
+        if (configuredUploadPeerId > 0 && configuredUploadPeerId != recipientPeerId) {
+            candidates.add(configuredUploadPeerId);
+        }
+        return List.copyOf(candidates);
+    }
+
+    private static long safeContentLength(Resource resource) {
+        try {
+            return resource.contentLength();
+        } catch (Exception e) {
+            log.debug("Could not determine PDF content length before upload", e);
+            return -1L;
+        }
     }
 
     private static boolean isTransientUploadFailure(RuntimeException failure) {
@@ -314,11 +424,25 @@ public class VkApiClient {
     }
 
     static String messagesUploadPeerId(long peerId) {
-        if (peerId <= 0 || peerId > Integer.MAX_VALUE) {
-            throw new IllegalStateException(
-                    "VK_UPLOAD_PEER_ID must be a positive int32 user ID that allowed community messages: " + peerId
-            );
+        if (peerId <= 0) {
+            throw new IllegalStateException("VK upload peer ID must be positive: " + peerId);
         }
         return Long.toString(peerId);
+    }
+
+    private enum UploadTargetType {
+        MESSAGES,
+        WALL
+    }
+
+    private record UploadTarget(UploadTargetType type, long id) {
+
+        private static UploadTarget messages(long peerId) {
+            return new UploadTarget(UploadTargetType.MESSAGES, peerId);
+        }
+
+        private static UploadTarget wall(long groupId) {
+            return new UploadTarget(UploadTargetType.WALL, groupId);
+        }
     }
 }

@@ -26,4 +26,12 @@ public class VkApiException extends RuntimeException {
     public boolean isApiError(String expectedMethod, int expectedCode) {
         return expectedMethod.equals(method) && errorCode != null && errorCode == expectedCode;
     }
+
+    public String method() {
+        return method;
+    }
+
+    public Integer errorCode() {
+        return errorCode;
+    }
 }

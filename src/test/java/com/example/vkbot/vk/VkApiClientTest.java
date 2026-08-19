@@ -3,6 +3,7 @@ package com.example.vkbot.vk;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -34,5 +35,26 @@ class VkApiClientTest {
     @Test
     void shouldUseConfiguredInt32UserForMessagesDocumentUpload() {
         assertEquals("11764588", VkApiClient.messagesUploadPeerId(11_764_588L));
+    }
+
+    @Test
+    void shouldKeepLargeRecipientIdAsLongForMessagesDocumentUpload() {
+        assertEquals("200002574488", VkApiClient.messagesUploadPeerId(200_002_574_488L));
+    }
+
+    @Test
+    void shouldTryActualRecipientBeforeConfiguredUploadPeer() {
+        assertEquals(
+                List.of(200_002_574_488L, 11_764_588L),
+                VkApiClient.uploadPeerCandidates(200_002_574_488L, 11_764_588L)
+        );
+    }
+
+    @Test
+    void shouldNotTrySameUploadPeerTwice() {
+        assertEquals(
+                List.of(11_764_588L),
+                VkApiClient.uploadPeerCandidates(11_764_588L, 11_764_588L)
+        );
     }
 }
