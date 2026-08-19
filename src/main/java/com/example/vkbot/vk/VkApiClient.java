@@ -2,8 +2,11 @@ package com.example.vkbot.vk;
 
 import com.example.vkbot.config.VkProperties;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.core5.util.Timeout;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -39,13 +42,18 @@ public class VkApiClient {
     private final VkProperties properties;
 
     public VkApiClient(RestClient.Builder builder, VkProperties properties) {
+        var connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
+                .setDefaultConnectionConfig(ConnectionConfig.custom()
+                        .setConnectTimeout(Timeout.ofMilliseconds(CONNECT_TIMEOUT_MILLIS))
+                        .build())
+                .build();
         CloseableHttpClient httpClient = HttpClients.custom()
+                .setConnectionManager(connectionManager)
                 .disableAutomaticRetries()
                 .disableCookieManagement()
                 .build();
         HttpComponentsClientHttpRequestFactory requestFactory =
                 new HttpComponentsClientHttpRequestFactory(httpClient);
-        requestFactory.setConnectTimeout(CONNECT_TIMEOUT_MILLIS);
         requestFactory.setConnectionRequestTimeout(CONNECT_TIMEOUT_MILLIS);
         requestFactory.setReadTimeout(RESPONSE_TIMEOUT_MILLIS);
 
@@ -91,11 +99,11 @@ public class VkApiClient {
         return response;
     }
 
-    public String uploadDocumentForMessages(long peerId, Resource pdf) {
+    public String uploadDocumentForMessages(Resource pdf) {
         RuntimeException lastFailure = null;
         for (int attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
             try {
-                return uploadDocumentOnce(peerId, pdf);
+                return uploadDocumentOnce(pdf);
             } catch (RuntimeException e) {
                 if (!isTransientUploadFailure(e) || attempt == MAX_UPLOAD_ATTEMPTS) {
                     throw e;
@@ -112,10 +120,9 @@ public class VkApiClient {
         throw new VkApiException("VK document upload failed after retries", lastFailure);
     }
 
-    private String uploadDocumentOnce(long peerId, Resource pdf) {
+    private String uploadDocumentOnce(Resource pdf) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("type", "doc");
-        form.add("peer_id", Long.toString(peerId));
 
         JsonNode uploadServerResponse = call("docs.getMessagesUploadServer", form).path("response");
         String uploadUrl = requiredText(uploadServerResponse, "upload_url");

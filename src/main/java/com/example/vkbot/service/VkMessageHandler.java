@@ -316,7 +316,7 @@ public class VkMessageHandler {
         synchronized (attachmentLock) {
             if (sharedAttachment == null) {
                 log.info("Uploading PDF to VK for the first delivery; userId={}", userId);
-                sharedAttachment = vkApiClient.uploadDocumentForMessages(userId, pdfResourceProvider.get());
+                sharedAttachment = vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get());
                 log.info("PDF successfully uploaded and saved by VK");
             }
             return sharedAttachment;

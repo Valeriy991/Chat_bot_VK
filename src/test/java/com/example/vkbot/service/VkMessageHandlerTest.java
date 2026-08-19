@@ -29,6 +29,7 @@ class VkMessageHandlerTest {
 
     private static final long GROUP_ID = 123L;
     private static final long USER_ID = 456L;
+    private static final long LARGE_USER_ID = 200_002_574_488L;
 
     @Mock
     private PdfResourceProvider pdfResourceProvider;
@@ -67,13 +68,13 @@ class VkMessageHandlerTest {
     void shouldSendPdfToCommunityMemberOnCaseInsensitiveCommentTrigger() {
         when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
 
         handler.handle(commentUpdate(10, "  СиЛа  "));
 
         verify(vkApiClient).isGroupMember(USER_ID);
-        verify(vkApiClient).uploadDocumentForMessages(USER_ID, pdfResourceProvider.get());
+        verify(vkApiClient).uploadDocumentForMessages(pdfResourceProvider.get());
         verify(vkApiClient).sendMessage(
                 eq(USER_ID),
                 eq("Вот ваш файл"),
@@ -86,7 +87,7 @@ class VkMessageHandlerTest {
     void shouldPostCommentInstructionsAndConsumeEventWhenMessagesAreNotAllowed() {
         when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
         doThrow(new VkApiException("messages.send", 901, "Can't send messages for users without permission"))
                 .when(vkApiClient)
@@ -115,7 +116,7 @@ class VkMessageHandlerTest {
     void shouldSendPdfWhenTriggerArrivesInDirectMessage() {
         when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
 
         handler.handle(directMessageUpdate(42, "СИЛА"));
@@ -137,10 +138,7 @@ class VkMessageHandlerTest {
         handler.handle(commentUpdate(11, "СИЛА"));
 
         verify(vkApiClient, times(2)).isGroupMember(USER_ID);
-        verify(vkApiClient, never()).uploadDocumentForMessages(
-                org.mockito.ArgumentMatchers.anyLong(),
-                org.mockito.ArgumentMatchers.any()
-        );
+        verify(vkApiClient, never()).uploadDocumentForMessages(org.mockito.ArgumentMatchers.any());
         verify(vkApiClient, times(1)).sendMessage(
                 eq(USER_ID),
                 eq("Сначала подпишитесь"),
@@ -153,16 +151,36 @@ class VkMessageHandlerTest {
     void shouldAutomaticallySendPdfWhenPendingUserJoinsCommunity() {
         when(vkApiClient.isGroupMember(USER_ID)).thenReturn(false, true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
 
         handler.handle(commentUpdate(10, "сила"));
         handler.handle(groupJoinUpdate(USER_ID));
 
         verify(vkApiClient, times(2)).isGroupMember(USER_ID);
-        verify(vkApiClient).uploadDocumentForMessages(USER_ID, pdfResourceProvider.get());
+        verify(vkApiClient).uploadDocumentForMessages(pdfResourceProvider.get());
         verify(vkApiClient).sendMessage(
                 eq(USER_ID),
+                eq("После подписки — ваш файл"),
+                eq("doc-123_1_key"),
+                anyInt()
+        );
+    }
+
+    @Test
+    void shouldAutomaticallySendPdfToPendingUserWhoseIdExceedsInt32() {
+        when(vkApiClient.isGroupMember(LARGE_USER_ID)).thenReturn(false, true);
+        when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
+                .thenReturn("doc-123_1_key");
+
+        handler.handle(commentUpdate(20, LARGE_USER_ID, "сила"));
+        handler.handle(groupJoinUpdate(LARGE_USER_ID));
+
+        verify(vkApiClient, times(2)).isGroupMember(LARGE_USER_ID);
+        verify(vkApiClient).uploadDocumentForMessages(pdfResourceProvider.get());
+        verify(vkApiClient).sendMessage(
+                eq(LARGE_USER_ID),
                 eq("После подписки — ваш файл"),
                 eq("doc-123_1_key"),
                 anyInt()
@@ -186,14 +204,14 @@ class VkMessageHandlerTest {
     void shouldSendAlreadySentNoticeOnceDuringCooldown() {
         when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
 
         handler.handle(commentUpdate(10, "сила"));
         handler.handle(commentUpdate(11, "СИЛА"));
         handler.handle(commentUpdate(12, "сила"));
 
-        verify(vkApiClient, times(1)).uploadDocumentForMessages(USER_ID, pdfResourceProvider.get());
+        verify(vkApiClient, times(1)).uploadDocumentForMessages(pdfResourceProvider.get());
         verify(vkApiClient).sendMessage(
                 eq(USER_ID),
                 eq("Вот ваш файл"),
@@ -219,7 +237,7 @@ class VkMessageHandlerTest {
     void shouldIgnoreReplayOfAlreadyProcessedComment() {
         when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
 
         JsonNode update = commentUpdate(10, "сила");
@@ -240,13 +258,13 @@ class VkMessageHandlerTest {
         long secondUserId = 789L;
         when(vkApiClient.isGroupMember(org.mockito.ArgumentMatchers.anyLong())).thenReturn(true);
         when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
-        when(vkApiClient.uploadDocumentForMessages(USER_ID, pdfResourceProvider.get()))
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
                 .thenReturn("doc-123_1_key");
 
         handler.handle(commentUpdate(10, USER_ID, "сила"));
         handler.handle(commentUpdate(11, secondUserId, "сила"));
 
-        verify(vkApiClient, times(1)).uploadDocumentForMessages(USER_ID, pdfResourceProvider.get());
+        verify(vkApiClient, times(1)).uploadDocumentForMessages(pdfResourceProvider.get());
         verify(vkApiClient).sendMessage(eq(USER_ID), eq("Вот ваш файл"), eq("doc-123_1_key"), anyInt());
         verify(vkApiClient).sendMessage(eq(secondUserId), eq("Вот ваш файл"), eq("doc-123_1_key"), anyInt());
     }
