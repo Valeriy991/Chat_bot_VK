@@ -200,7 +200,12 @@ public class VkMessageHandler {
                     processedEvents.put(eventKey, Boolean.TRUE);
                     return;
                 }
-                log.info("Sending presentation message to VK userId={}", userId);
+                log.info(
+                        "Sending presentation message to VK userId={} attachmentPresent={} publicLinkIncluded={}",
+                        userId,
+                        attachment != null && !attachment.isBlank(),
+                        hasPublicPdfUrl()
+                );
                 boolean sent = sendMessageOrHandleDenied(
                         userId,
                         deliveryText(properties.replyText()),
@@ -310,7 +315,13 @@ public class VkMessageHandler {
                 usersWaitingForSubscription.remove(userId);
                 return;
             }
-            log.info("Sending pending presentation after subscription to VK userId={}", userId);
+            log.info(
+                    "Sending pending presentation after subscription to VK userId={} "
+                            + "attachmentPresent={} publicLinkIncluded={}",
+                    userId,
+                    attachment != null && !attachment.isBlank(),
+                    hasPublicPdfUrl()
+            );
             try {
                 vkApiClient.sendMessage(
                         userId,
