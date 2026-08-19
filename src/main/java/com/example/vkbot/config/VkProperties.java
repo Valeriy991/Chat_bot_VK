@@ -15,7 +15,10 @@ public record VkProperties(
         String nonMemberText,
         String messagesDisabledCommentText,
         String afterSubscriptionText,
+        String deliveryUnavailableText,
         String pdfPath,
+        String pdfAttachment,
+        long uploadPeerId,
         Duration retryDelay,
         Duration repeatReplyCooldown
 ) {

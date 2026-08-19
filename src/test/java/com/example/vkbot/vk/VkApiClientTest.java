@@ -30,4 +30,9 @@ class VkApiClientTest {
     void shouldUseCommunityIdForWallDocumentUpload() {
         assertEquals("235381622", VkApiClient.wallUploadGroupId(235_381_622L));
     }
+
+    @Test
+    void shouldUseConfiguredInt32UserForMessagesDocumentUpload() {
+        assertEquals("11764588", VkApiClient.messagesUploadPeerId(11_764_588L));
+    }
 }

@@ -121,10 +121,7 @@ public class VkApiClient {
     }
 
     private String uploadDocumentOnce(Resource pdf) {
-        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("group_id", wallUploadGroupId(properties.groupId()));
-
-        JsonNode uploadServerResponse = call("docs.getWallUploadServer", form).path("response");
+        JsonNode uploadServerResponse = getDocumentUploadServer();
         String uploadUrl = requiredText(uploadServerResponse, "upload_url");
         URI originalUploadUri = URI.create(uploadUrl);
         URI uploadUri = normalizeUploadUri(uploadUrl);
@@ -167,6 +164,19 @@ public class VkApiClient {
             attachment += "_" + accessKey;
         }
         return attachment;
+    }
+
+    private JsonNode getDocumentUploadServer() {
+        if (properties.uploadPeerId() > 0) {
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("type", "doc");
+            form.add("peer_id", messagesUploadPeerId(properties.uploadPeerId()));
+            return call("docs.getMessagesUploadServer", form).path("response");
+        }
+
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("group_id", wallUploadGroupId(properties.groupId()));
+        return call("docs.getWallUploadServer", form).path("response");
     }
 
     private static boolean isTransientUploadFailure(RuntimeException failure) {
@@ -301,5 +311,14 @@ public class VkApiClient {
             throw new VkApiException("VK group ID must be positive for document upload: " + groupId);
         }
         return Long.toString(groupId);
+    }
+
+    static String messagesUploadPeerId(long peerId) {
+        if (peerId <= 0 || peerId > Integer.MAX_VALUE) {
+            throw new IllegalStateException(
+                    "VK_UPLOAD_PEER_ID must be a positive int32 user ID that allowed community messages: " + peerId
+            );
+        }
+        return Long.toString(peerId);
     }
 }

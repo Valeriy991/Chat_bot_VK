@@ -42,20 +42,7 @@ class VkMessageHandlerTest {
 
     @BeforeEach
     void setUp() {
-        VkProperties properties = new VkProperties(
-                "token",
-                GROUP_ID,
-                "5.199",
-                "сила",
-                "Вот ваш файл",
-                "Файл уже отправлен",
-                "Сначала подпишитесь",
-                "Откройте сообщения сообщества и отправьте слово сила",
-                "После подписки — ваш файл",
-                "classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf",
-                Duration.ofSeconds(3),
-                Duration.ofMinutes(1)
-        );
+        VkProperties properties = testProperties("");
         handler = new VkMessageHandler(
                 new TriggerMatcher(properties),
                 pdfResourceProvider,
@@ -183,6 +170,53 @@ class VkMessageHandlerTest {
                 eq(LARGE_USER_ID),
                 eq("После подписки — ваш файл"),
                 eq("doc-123_1_key"),
+                anyInt()
+        );
+    }
+
+    @Test
+    void shouldConsumeJoinAndNotifyUserWhenVkPermanentlyRejectsDocumentUpload() {
+        when(vkApiClient.isGroupMember(LARGE_USER_ID)).thenReturn(false, true);
+        when(pdfResourceProvider.get()).thenReturn(new ByteArrayResource("%PDF-test".getBytes()));
+        when(vkApiClient.uploadDocumentForMessages(pdfResourceProvider.get()))
+                .thenThrow(new VkApiException(
+                        "docs.getWallUploadServer",
+                        15,
+                        "Access denied: User can't upload docs to this group"
+                ));
+
+        JsonNode joinUpdate = groupJoinUpdate(LARGE_USER_ID);
+        handler.handle(commentUpdate(21, LARGE_USER_ID, "сила"));
+        handler.handle(joinUpdate);
+        handler.handle(joinUpdate);
+
+        verify(vkApiClient, times(1)).uploadDocumentForMessages(pdfResourceProvider.get());
+        verify(vkApiClient).sendMessage(
+                eq(LARGE_USER_ID),
+                eq("Материал временно недоступен"),
+                isNull(),
+                anyInt()
+        );
+    }
+
+    @Test
+    void shouldUseConfiguredVkAttachmentWithoutUploadingPdfAgain() {
+        VkProperties properties = testProperties("doc-123_99_access-key");
+        VkMessageHandler configuredHandler = new VkMessageHandler(
+                new TriggerMatcher(properties),
+                pdfResourceProvider,
+                vkApiClient,
+                properties
+        );
+        when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
+
+        configuredHandler.handle(commentUpdate(22, "сила"));
+
+        verify(vkApiClient, never()).uploadDocumentForMessages(org.mockito.ArgumentMatchers.any());
+        verify(vkApiClient).sendMessage(
+                eq(USER_ID),
+                eq("Вот ваш файл"),
+                eq("doc-123_99_access-key"),
                 anyInt()
         );
     }
@@ -318,5 +352,25 @@ class VkMessageHandlerTest {
                                 .put("from_id", USER_ID)
                                 .put("peer_id", USER_ID)
                                 .put("text", text)));
+    }
+
+    private VkProperties testProperties(String pdfAttachment) {
+        return new VkProperties(
+                "token",
+                GROUP_ID,
+                "5.199",
+                "сила",
+                "Вот ваш файл",
+                "Файл уже отправлен",
+                "Сначала подпишитесь",
+                "Откройте сообщения сообщества и отправьте слово сила",
+                "После подписки — ваш файл",
+                "Материал временно недоступен",
+                "classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf",
+                pdfAttachment,
+                0L,
+                Duration.ofSeconds(3),
+                Duration.ofMinutes(1)
+        );
     }
 }

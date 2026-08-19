@@ -44,6 +44,12 @@ public class VkConfigurationValidator {
         if (properties.afterSubscriptionText() == null || properties.afterSubscriptionText().isBlank()) {
             throw new IllegalStateException("VK_AFTER_SUBSCRIPTION_TEXT must not be blank");
         }
+        if (properties.deliveryUnavailableText() == null || properties.deliveryUnavailableText().isBlank()) {
+            throw new IllegalStateException("VK_DELIVERY_UNAVAILABLE_TEXT must not be blank");
+        }
+        if (properties.uploadPeerId() < 0 || properties.uploadPeerId() > Integer.MAX_VALUE) {
+            throw new IllegalStateException("VK_UPLOAD_PEER_ID must be 0 or a positive int32 user ID");
+        }
         if (properties.repeatReplyCooldown() == null || properties.repeatReplyCooldown().isNegative()) {
             throw new IllegalStateException("VK_REPEAT_REPLY_COOLDOWN must be a non-negative duration");
         }

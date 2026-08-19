@@ -15,12 +15,16 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Service
 public class VkMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(VkMessageHandler.class);
     private static final int PROCESSED_EVENT_CACHE_SIZE = 10_000;
+    private static final Pattern VK_DOCUMENT_ATTACHMENT = Pattern.compile(
+            "doc-?\\d+_\\d+(?:_[A-Za-z0-9_-]+)?"
+    );
 
     private final TriggerMatcher triggerMatcher;
     private final PdfResourceProvider pdfResourceProvider;
@@ -49,6 +53,7 @@ public class VkMessageHandler {
         this.pdfResourceProvider = pdfResourceProvider;
         this.vkApiClient = vkApiClient;
         this.properties = properties;
+        this.sharedAttachment = configuredAttachment(properties.pdfAttachment());
     }
 
     public void handle(JsonNode update) {
@@ -176,7 +181,11 @@ public class VkMessageHandler {
             log.info("Community membership confirmed for VK userId={}", userId);
 
             if (!state.fileSent) {
-                String attachment = getOrUploadAttachment(userId);
+                String attachment = getOrUploadAttachmentOrNotify(userId, eventKey);
+                if (attachment == null) {
+                    processedEvents.put(eventKey, Boolean.TRUE);
+                    return;
+                }
                 log.info("Sending presentation message to VK userId={}", userId);
                 boolean sent = sendMessageOrHandleDenied(
                         userId,
@@ -280,8 +289,13 @@ public class VkMessageHandler {
                 return;
             }
 
-            String attachment = getOrUploadAttachment(userId);
             String eventId = update.path("event_id").asText("group_join:" + userId);
+            MessageKey eventKey = new MessageKey(eventId);
+            String attachment = getOrUploadAttachmentOrNotify(userId, eventKey);
+            if (attachment == null) {
+                usersWaitingForSubscription.remove(userId);
+                return;
+            }
             log.info("Sending pending presentation after subscription to VK userId={}", userId);
             try {
                 vkApiClient.sendMessage(
@@ -321,6 +335,63 @@ public class VkMessageHandler {
             }
             return sharedAttachment;
         }
+    }
+
+    private String getOrUploadAttachmentOrNotify(long userId, TriggerEventKey eventKey) {
+        try {
+            return getOrUploadAttachment(userId);
+        } catch (IllegalStateException e) {
+            notifyPermanentDeliveryFailure(userId, eventKey, e);
+            return null;
+        } catch (VkApiException e) {
+            if (!isPermanentDocumentUploadFailure(e)) {
+                throw e;
+            }
+            notifyPermanentDeliveryFailure(userId, eventKey, e);
+            return null;
+        }
+    }
+
+    private void notifyPermanentDeliveryFailure(long userId, TriggerEventKey eventKey, RuntimeException failure) {
+        log.error(
+                "PDF delivery cannot continue with the current VK upload configuration; "
+                        + "set VK_PDF_ATTACHMENT or a valid VK_UPLOAD_PEER_ID; event will not be retried",
+                failure
+        );
+        sendMessageOrHandleDenied(
+                userId,
+                properties.deliveryUnavailableText(),
+                null,
+                deterministicRandomId(userId, eventKey, "delivery-unavailable"),
+                eventKey
+        );
+    }
+
+    private static boolean isPermanentDocumentUploadFailure(VkApiException failure) {
+        return failure.isApiError("docs.getMessagesUploadServer", 15)
+                || failure.isApiError("docs.getMessagesUploadServer", 27)
+                || failure.isApiError("docs.getMessagesUploadServer", 100)
+                || failure.isApiError("docs.getMessagesUploadServer", 901)
+                || failure.isApiError("docs.getWallUploadServer", 15)
+                || failure.isApiError("docs.getWallUploadServer", 27)
+                || failure.isApiError("docs.getWallUploadServer", 100)
+                || failure.isApiError("docs.save", 15)
+                || failure.isApiError("docs.save", 27)
+                || failure.isApiError("docs.save", 100)
+                || failure.isApiError("docs.save", 105);
+    }
+
+    private static String configuredAttachment(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String attachment = value.strip();
+        if (!VK_DOCUMENT_ATTACHMENT.matcher(attachment).matches()) {
+            throw new IllegalArgumentException(
+                    "VK_PDF_ATTACHMENT must have format doc{owner_id}_{document_id}[_access_key]"
+            );
+        }
+        return attachment;
     }
 
     private int deterministicRandomId(long userId, Object eventKey, String responseKind) {
