@@ -122,10 +122,9 @@ public class VkApiClient {
 
     private String uploadDocumentOnce(Resource pdf) {
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-        form.add("type", "doc");
-        form.add("peer_id", Integer.toString(communityMessagesPeerId(properties.groupId())));
+        form.add("group_id", wallUploadGroupId(properties.groupId()));
 
-        JsonNode uploadServerResponse = call("docs.getMessagesUploadServer", form).path("response");
+        JsonNode uploadServerResponse = call("docs.getWallUploadServer", form).path("response");
         String uploadUrl = requiredText(uploadServerResponse, "upload_url");
         URI originalUploadUri = URI.create(uploadUrl);
         URI uploadUri = normalizeUploadUri(uploadUrl);
@@ -297,10 +296,10 @@ public class VkApiClient {
         return node.path(field).asLong();
     }
 
-    static int communityMessagesPeerId(long groupId) {
-        if (groupId <= 0 || groupId > Integer.MAX_VALUE) {
-            throw new VkApiException("VK group ID must be a positive int32 value for document upload: " + groupId);
+    static String wallUploadGroupId(long groupId) {
+        if (groupId <= 0) {
+            throw new VkApiException("VK group ID must be positive for document upload: " + groupId);
         }
-        return Math.toIntExact(-groupId);
+        return Long.toString(groupId);
     }
 }
