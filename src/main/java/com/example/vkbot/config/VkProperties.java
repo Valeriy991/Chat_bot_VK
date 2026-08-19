@@ -18,6 +18,7 @@ public record VkProperties(
         String deliveryUnavailableText,
         String pdfPath,
         String pdfAttachment,
+        String pdfPublicUrl,
         long uploadPeerId,
         Duration retryDelay,
         Duration repeatReplyCooldown

@@ -54,8 +54,13 @@ public class VkMessageHandler {
         this.vkApiClient = vkApiClient;
         this.properties = properties;
         this.sharedAttachment = configuredAttachment(properties.pdfAttachment());
+        if (hasPublicPdfUrl()) {
+            log.info("Public PDF fallback link configured with VK_PDF_PUBLIC_URL");
+        }
         if (sharedAttachment != null) {
             log.info("PDF delivery configured with pre-uploaded VK_PDF_ATTACHMENT; runtime upload is disabled");
+        } else if (hasPublicPdfUrl()) {
+            log.info("PDF delivery configured for public-link-only mode; runtime upload is disabled");
         } else {
             log.info(
                     "PDF delivery configured for runtime upload; configuredUploadPeerId={} "
@@ -190,15 +195,15 @@ public class VkMessageHandler {
             log.info("Community membership confirmed for VK userId={}", userId);
 
             if (!state.fileSent) {
-                String attachment = getOrUploadAttachmentOrNotify(userId, eventKey);
-                if (attachment == null) {
+                String attachment = attachmentForDelivery(userId, eventKey);
+                if (attachment == null && !hasPublicPdfUrl()) {
                     processedEvents.put(eventKey, Boolean.TRUE);
                     return;
                 }
                 log.info("Sending presentation message to VK userId={}", userId);
                 boolean sent = sendMessageOrHandleDenied(
                         userId,
-                        properties.replyText(),
+                        deliveryText(properties.replyText()),
                         attachment,
                         deterministicRandomId(userId, eventKey, "file"),
                         eventKey
@@ -300,8 +305,8 @@ public class VkMessageHandler {
 
             String eventId = update.path("event_id").asText("group_join:" + userId);
             MessageKey eventKey = new MessageKey(eventId);
-            String attachment = getOrUploadAttachmentOrNotify(userId, eventKey);
-            if (attachment == null) {
+            String attachment = attachmentForDelivery(userId, eventKey);
+            if (attachment == null && !hasPublicPdfUrl()) {
                 usersWaitingForSubscription.remove(userId);
                 return;
             }
@@ -309,7 +314,7 @@ public class VkMessageHandler {
             try {
                 vkApiClient.sendMessage(
                         userId,
-                        properties.afterSubscriptionText(),
+                        deliveryText(properties.afterSubscriptionText()),
                         attachment,
                         deterministicRandomId(userId, eventId, "joined-file")
                 );
@@ -344,6 +349,29 @@ public class VkMessageHandler {
             }
             return sharedAttachment;
         }
+    }
+
+    private String attachmentForDelivery(long userId, TriggerEventKey eventKey) {
+        if (sharedAttachment == null && hasPublicPdfUrl()) {
+            log.info("Using VK_PDF_PUBLIC_URL for userId={}; runtime PDF upload is skipped", userId);
+            return null;
+        }
+        return getOrUploadAttachmentOrNotify(userId, eventKey);
+    }
+
+    private boolean hasPublicPdfUrl() {
+        return properties.pdfPublicUrl() != null && !properties.pdfPublicUrl().isBlank();
+    }
+
+    private String deliveryText(String text) {
+        if (!hasPublicPdfUrl()) {
+            return text;
+        }
+        String url = properties.pdfPublicUrl().strip();
+        if (text.contains(url)) {
+            return text;
+        }
+        return text.stripTrailing() + System.lineSeparator() + System.lineSeparator() + url;
     }
 
     private String getOrUploadAttachmentOrNotify(long userId, TriggerEventKey eventKey) {

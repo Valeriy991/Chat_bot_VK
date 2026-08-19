@@ -228,6 +228,87 @@ class VkMessageHandlerTest {
     }
 
     @Test
+    void shouldIncludePublicPdfUrlWhenVkSilentlyDropsConfiguredAttachment() {
+        VkProperties properties = testProperties(
+                "doc587116608_704085410",
+                "https://vk.ru/doc587116608_704085410?hash=test"
+        );
+        VkMessageHandler configuredHandler = new VkMessageHandler(
+                new TriggerMatcher(properties),
+                pdfResourceProvider,
+                vkApiClient,
+                properties
+        );
+        when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
+
+        configuredHandler.handle(commentUpdate(23, "сила"));
+
+        verify(vkApiClient).sendMessage(
+                eq(USER_ID),
+                eq("Вот ваш файл\n\nhttps://vk.ru/doc587116608_704085410?hash=test"),
+                eq("doc587116608_704085410"),
+                anyInt()
+        );
+    }
+
+    @Test
+    void shouldSendPublicPdfUrlWithoutTryingRuntimeUpload() {
+        VkProperties properties = testProperties(
+                "",
+                "https://example.com/material.pdf"
+        );
+        VkMessageHandler configuredHandler = new VkMessageHandler(
+                new TriggerMatcher(properties),
+                pdfResourceProvider,
+                vkApiClient,
+                properties
+        );
+        when(vkApiClient.isGroupMember(USER_ID)).thenReturn(true);
+
+        configuredHandler.handle(commentUpdate(24, "сила"));
+
+        verify(vkApiClient, never()).uploadDocumentForMessages(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+        verify(vkApiClient).sendMessage(
+                eq(USER_ID),
+                eq("Вот ваш файл\n\nhttps://example.com/material.pdf"),
+                isNull(),
+                anyInt()
+        );
+    }
+
+    @Test
+    void shouldSendPublicPdfUrlAutomaticallyAfterPendingUserSubscribes() {
+        VkProperties properties = testProperties(
+                "",
+                "https://example.com/material.pdf"
+        );
+        VkMessageHandler configuredHandler = new VkMessageHandler(
+                new TriggerMatcher(properties),
+                pdfResourceProvider,
+                vkApiClient,
+                properties
+        );
+        when(vkApiClient.isGroupMember(USER_ID)).thenReturn(false, true);
+
+        configuredHandler.handle(commentUpdate(25, "сила"));
+        configuredHandler.handle(groupJoinUpdate(USER_ID));
+
+        verify(vkApiClient, never()).uploadDocumentForMessages(
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong()
+        );
+        verify(vkApiClient).sendMessage(
+                eq(USER_ID),
+                eq("После подписки — ваш файл\n\nhttps://example.com/material.pdf"),
+                isNull(),
+                anyInt()
+        );
+    }
+
+    @Test
     void shouldIgnoreJoinWhenUserDidNotRequestMaterial() {
         handler.handle(groupJoinUpdate(USER_ID));
 
@@ -361,6 +442,10 @@ class VkMessageHandlerTest {
     }
 
     private VkProperties testProperties(String pdfAttachment) {
+        return testProperties(pdfAttachment, "");
+    }
+
+    private VkProperties testProperties(String pdfAttachment, String pdfPublicUrl) {
         return new VkProperties(
                 "token",
                 GROUP_ID,
@@ -374,6 +459,7 @@ class VkMessageHandlerTest {
                 "Материал временно недоступен",
                 "classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf",
                 pdfAttachment,
+                pdfPublicUrl,
                 0L,
                 Duration.ofSeconds(3),
                 Duration.ofMinutes(1)

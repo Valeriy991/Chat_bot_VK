@@ -92,6 +92,7 @@ export VK_MESSAGES_DISABLED_COMMENT_TEXT='Не могу отправить фа�
 export VK_AFTER_SUBSCRIPTION_TEXT='Вот твой файл'
 export VK_DELIVERY_UNAVAILABLE_TEXT='Материал временно не удалось отправить. Пожалуйста, попробуй написать «сила» немного позже.'
 export VK_PDF_ATTACHMENT='doc-235381622_123456789_access_key'
+export VK_PDF_PUBLIC_URL='https://example.com/material.pdf'
 export VK_UPLOAD_PEER_ID='123456789'
 export VK_REPEAT_REPLY_COOLDOWN='PT1M'
 export VK_API_VERSION='5.199'
@@ -127,6 +128,14 @@ export VK_PDF_ATTACHMENT='doc-235381622_123456789_access_key'
 ```
 
 Значение должно иметь формат `doc{owner_id}_{document_id}` или `doc{owner_id}_{document_id}_{access_key}`. При наличии этой переменной бот сразу использует готовый документ и не вызывает upload API.
+
+VK может принять `messages.send`, но молча убрать недоступное сообществу вложение. Чтобы пользователь в любом случае получил материал, задайте полную публичную ссылку:
+
+```bash
+export VK_PDF_PUBLIC_URL='https://vk.ru/doc587116608_704085410?hash=...'
+```
+
+Ссылка добавляется к `VK_REPLY_TEXT` и `VK_AFTER_SUBSCRIPTION_TEXT`. Если одновременно задан `VK_PDF_ATTACHMENT`, бот отправляет и нативное вложение, и резервную ссылку. Если задана только ссылка, runtime-загрузка PDF в VK не выполняется.
 
 Если готового attachment ещё нет, можно задать `VK_UPLOAD_PEER_ID`: это положительный числовой ID тестового пользователя, который открыл диалог сообщества, нажал «Начать» и разрешил сообщения. Это резервный peer для однократной загрузки PDF; сначала бот всё равно пробует фактического получателя. Полученный документ кэшируется и отправляется любым пользователям.
 

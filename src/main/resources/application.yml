@@ -24,6 +24,7 @@ vk:
   delivery-unavailable-text: ${VK_DELIVERY_UNAVAILABLE_TEXT:Материал временно не удалось отправить. Пожалуйста, попробуй написать «сила» немного позже.}
   pdf-path: ${VK_PDF_PATH:classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf}
   pdf-attachment: ${VK_PDF_ATTACHMENT:}
+  pdf-public-url: ${VK_PDF_PUBLIC_URL:}
   upload-peer-id: ${VK_UPLOAD_PEER_ID:0}
   retry-delay: ${VK_RETRY_DELAY:PT3S}
   repeat-reply-cooldown: ${VK_REPEAT_REPLY_COOLDOWN:PT1M}
