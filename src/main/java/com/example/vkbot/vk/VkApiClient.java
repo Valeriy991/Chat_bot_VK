@@ -136,8 +136,24 @@ public class VkApiClient {
             }
         }
 
+        log.warn("All explicit messages upload peers were rejected; trying messages upload without peer_id");
+        try {
+            return uploadDocumentWithRetries(pdf, UploadTarget.messagesWithoutPeer());
+        } catch (VkApiException e) {
+            if (!isUploadPeerRejected(e)) {
+                throw e;
+            }
+            rejectedPeers.add(e);
+            log.warn(
+                    "VK rejected messages document upload without peer_id apiMethod={} apiCode={}; "
+                            + "trying wall upload",
+                    e.method(),
+                    e.errorCode()
+            );
+        }
+
         log.warn(
-                "All messages upload peer candidates were rejected; trying wall upload for communityId={}",
+                "All messages upload strategies were rejected; trying wall upload for communityId={}",
                 properties.groupId()
         );
         try {
@@ -241,15 +257,20 @@ public class VkApiClient {
     }
 
     private JsonNode getDocumentUploadServer(UploadTarget target) {
-        if (target.type() == UploadTargetType.MESSAGES) {
+        if (target.type() == UploadTargetType.MESSAGES
+                || target.type() == UploadTargetType.MESSAGES_WITHOUT_PEER) {
             MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
             form.add("type", "doc");
-            form.add("peer_id", messagesUploadPeerId(target.id()));
-            log.info(
-                    "Calling docs.getMessagesUploadServer with peerId={} exceedsLegacyInt32={}",
-                    target.id(),
-                    target.id() > Integer.MAX_VALUE
-            );
+            if (target.type() == UploadTargetType.MESSAGES) {
+                form.add("peer_id", messagesUploadPeerId(target.id()));
+                log.info(
+                        "Calling docs.getMessagesUploadServer with peerId={} exceedsLegacyInt32={}",
+                        target.id(),
+                        target.id() > Integer.MAX_VALUE
+                );
+            } else {
+                log.info("Calling docs.getMessagesUploadServer without peer_id");
+            }
             return call("docs.getMessagesUploadServer", form).path("response");
         }
 
@@ -432,6 +453,7 @@ public class VkApiClient {
 
     private enum UploadTargetType {
         MESSAGES,
+        MESSAGES_WITHOUT_PEER,
         WALL
     }
 
@@ -439,6 +461,10 @@ public class VkApiClient {
 
         private static UploadTarget messages(long peerId) {
             return new UploadTarget(UploadTargetType.MESSAGES, peerId);
+        }
+
+        private static UploadTarget messagesWithoutPeer() {
+            return new UploadTarget(UploadTargetType.MESSAGES_WITHOUT_PEER, 0L);
         }
 
         private static UploadTarget wall(long groupId) {
