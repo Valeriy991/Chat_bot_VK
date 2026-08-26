@@ -25,6 +25,8 @@ class TriggerMatcherTest {
                     "",
                     "",
                     0L,
+                    3,
+                    Duration.ofHours(1),
                     Duration.ofSeconds(3),
                     Duration.ofMinutes(1)
             )

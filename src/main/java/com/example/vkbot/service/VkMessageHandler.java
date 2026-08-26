@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
@@ -32,7 +31,7 @@ public class VkMessageHandler {
     private final VkProperties properties;
     private final Object attachmentLock = new Object();
     private final ConcurrentMap<Long, DeliveryState> deliveryByUser = new ConcurrentHashMap<>();
-    private final Set<Long> usersWaitingForSubscription = ConcurrentHashMap.newKeySet();
+    private final ConcurrentMap<Long, TriggerEventKey> usersWaitingForSubscription = new ConcurrentHashMap<>();
     private volatile String sharedAttachment;
     private final Map<TriggerEventKey, Boolean> processedEvents = Collections.synchronizedMap(
             new LinkedHashMap<>(128, 0.75f, true) {
@@ -165,26 +164,15 @@ public class VkMessageHandler {
             }
 
             long now = System.nanoTime();
-            if (state.fileSent && !state.canSendRepeatReply(now, properties.repeatReplyCooldown().toNanos())) {
-                processedEvents.put(eventKey, Boolean.TRUE);
-                log.debug("Repeat trigger suppressed by cooldown for VK userId={}", userId);
-                return;
-            }
 
             log.info("Checking community membership for VK userId={}", userId);
             if (!vkApiClient.isGroupMember(userId)) {
-                usersWaitingForSubscription.add(userId);
+                usersWaitingForSubscription.put(userId, eventKey);
                 if (state.canSendNonMemberReply(now, properties.repeatReplyCooldown().toNanos())) {
-                    boolean sent = sendMessageOrHandleDenied(
-                            userId,
-                            properties.nonMemberText(),
-                            null,
-                            deterministicRandomId(userId, eventKey, "non-member"),
-                            eventKey
-                    );
+                    boolean sent = sendSubscriptionRequiredNotice(userId, eventKey);
                     if (sent) {
                         state.markNonMemberReplySent(now);
-                        log.info("Subscription-required notice sent to VK userId={}", userId);
+                        log.info("Subscription-required notice delivered to VK userId={}", userId);
                     }
                 } else {
                     log.debug("Subscription-required notice suppressed by cooldown for VK userId={}", userId);
@@ -194,46 +182,100 @@ public class VkMessageHandler {
             }
             log.info("Community membership confirmed for VK userId={}", userId);
 
-            if (!state.fileSent) {
-                String attachment = attachmentForDelivery(userId, eventKey);
-                if (attachment == null && !hasPublicPdfUrl()) {
-                    processedEvents.put(eventKey, Boolean.TRUE);
-                    return;
+            long deliveryWindowNanos = properties.deliveryWindow().toNanos();
+            if (!state.canSendDelivery(
+                    now,
+                    deliveryWindowNanos,
+                    properties.maxDeliveriesPerWindow()
+            )) {
+                if (state.canSendLimitReply(now, deliveryWindowNanos)) {
+                    boolean sent = sendMessageOrHandleDenied(
+                            userId,
+                            deliveryText(properties.alreadySentText()),
+                            null,
+                            deterministicRandomId(userId, eventKey, "delivery-limit"),
+                            eventKey
+                    );
+                    if (sent) {
+                        state.markLimitReplySent(now, deliveryWindowNanos);
+                        log.info(
+                                "Delivery limit notice with public link sent to VK userId={} for trigger event {}",
+                                userId,
+                                eventKey
+                        );
+                    }
+                } else {
+                    log.debug("Trigger suppressed by delivery-window limit for VK userId={}", userId);
                 }
-                log.info(
-                        "Sending presentation message to VK userId={} attachmentPresent={} publicLinkIncluded={}",
-                        userId,
-                        attachment != null && !attachment.isBlank(),
-                        hasPublicPdfUrl()
-                );
-                boolean sent = sendMessageOrHandleDenied(
-                        userId,
-                        deliveryText(properties.replyText()),
-                        attachment,
-                        deterministicRandomId(userId, eventKey, "file"),
-                        eventKey
-                );
-                if (sent) {
-                    state.fileSent = true;
-                    usersWaitingForSubscription.remove(userId);
-                    log.info("Presentation sent to VK userId={} for trigger event {}", userId, eventKey);
-                }
-            } else {
-                boolean sent = sendMessageOrHandleDenied(
-                        userId,
-                        properties.alreadySentText(),
-                        null,
-                        deterministicRandomId(userId, eventKey, "repeat"),
-                        eventKey
-                );
-                if (sent) {
-                    state.markRepeatReplySent(now);
-                    log.info("Already-sent notice sent to VK userId={} for trigger event {}", userId, eventKey);
-                }
+                processedEvents.put(eventKey, Boolean.TRUE);
+                return;
+            }
+
+            String attachment = attachmentForDelivery(userId, eventKey);
+            if (attachment == null && !hasPublicPdfUrl()) {
+                processedEvents.put(eventKey, Boolean.TRUE);
+                return;
+            }
+            log.info(
+                    "Sending presentation message to VK userId={} attachmentPresent={} publicLinkIncluded={}",
+                    userId,
+                    attachment != null && !attachment.isBlank(),
+                    hasPublicPdfUrl()
+            );
+            boolean sent = sendMessageOrHandleDenied(
+                    userId,
+                    deliveryText(properties.replyText()),
+                    attachment,
+                    deterministicRandomId(userId, eventKey, "file"),
+                    eventKey
+            );
+            if (sent) {
+                state.markDeliverySent(now, deliveryWindowNanos);
+                usersWaitingForSubscription.remove(userId);
+                log.info("Presentation sent to VK userId={} for trigger event {}", userId, eventKey);
             }
 
             processedEvents.put(eventKey, Boolean.TRUE);
         }
+    }
+
+    private boolean sendSubscriptionRequiredNotice(long userId, TriggerEventKey eventKey) {
+        if (eventKey instanceof CommentKey commentKey) {
+            try {
+                vkApiClient.replyToWallComment(
+                        commentKey.ownerId(),
+                        commentKey.postId(),
+                        commentKey.commentId(),
+                        properties.nonMemberText(),
+                        "subscription-required-" + Integer.toUnsignedString(
+                                Objects.hash(properties.groupId(), userId, commentKey)
+                        )
+                );
+                log.info(
+                        "Subscription-required notice posted under wall comment {} for VK userId={}",
+                        commentKey,
+                        userId
+                );
+                return true;
+            } catch (Exception replyFailure) {
+                log.warn(
+                        "Could not post subscription-required notice for VK userId={} under comment {}; "
+                                + "check wall permission",
+                        userId,
+                        commentKey,
+                        replyFailure
+                );
+                return false;
+            }
+        }
+
+        return sendMessageOrHandleDenied(
+                userId,
+                properties.nonMemberText(),
+                null,
+                deterministicRandomId(userId, eventKey, "non-member"),
+                eventKey
+        );
     }
 
     private boolean sendMessageOrHandleDenied(
@@ -292,22 +334,18 @@ public class VkMessageHandler {
             log.warn("group_join ignored because groupId or userId is invalid");
             return;
         }
-        if (!usersWaitingForSubscription.contains(userId)) {
+        TriggerEventKey pendingRequest = usersWaitingForSubscription.get(userId);
+        if (pendingRequest == null) {
             log.debug("group_join ignored because VK userId={} did not request the material", userId);
             return;
         }
 
         DeliveryState state = deliveryByUser.computeIfAbsent(userId, ignored -> new DeliveryState());
         synchronized (state) {
-            if (state.fileSent) {
-                usersWaitingForSubscription.remove(userId);
+            pendingRequest = usersWaitingForSubscription.get(userId);
+            if (pendingRequest == null) {
                 return;
             }
-            if (!vkApiClient.isGroupMember(userId)) {
-                log.info("group_join received, but membership is not confirmed yet for VK userId={}", userId);
-                return;
-            }
-
             String eventId = update.path("event_id").asText("group_join:" + userId);
             MessageKey eventKey = new MessageKey(eventId);
             String attachment = attachmentForDelivery(userId, eventKey);
@@ -337,9 +375,12 @@ public class VkMessageHandler {
                         "Pending file cannot be sent after subscription because VK userId={} has not allowed community messages; event will not be retried",
                         userId
                 );
+                if (pendingRequest instanceof CommentKey commentKey) {
+                    replyWithMessagesPermissionInstructions(userId, commentKey);
+                }
                 return;
             }
-            state.fileSent = true;
+            state.markDeliverySent(System.nanoTime(), properties.deliveryWindow().toNanos());
             usersWaitingForSubscription.remove(userId);
             log.info("Pending presentation sent after subscription to VK userId={}", userId);
         }
@@ -473,19 +514,42 @@ public class VkMessageHandler {
     }
 
     private static final class DeliveryState {
-        private boolean fileSent;
-        private boolean repeatReplySent;
-        private long lastRepeatReplyNanos;
+        private boolean deliveryWindowStarted;
+        private long deliveryWindowStartedNanos;
+        private int deliveriesInWindow;
+        private boolean limitReplySent;
         private boolean nonMemberReplySent;
         private long lastNonMemberReplyNanos;
 
-        private boolean canSendRepeatReply(long now, long cooldownNanos) {
-            return !repeatReplySent || now - lastRepeatReplyNanos >= cooldownNanos;
+        private boolean canSendDelivery(long now, long windowNanos, int maxDeliveries) {
+            refreshDeliveryWindow(now, windowNanos);
+            return deliveriesInWindow < maxDeliveries;
         }
 
-        private void markRepeatReplySent(long now) {
-            repeatReplySent = true;
-            lastRepeatReplyNanos = now;
+        private void markDeliverySent(long now, long windowNanos) {
+            refreshDeliveryWindow(now, windowNanos);
+            deliveriesInWindow++;
+        }
+
+        private boolean canSendLimitReply(long now, long windowNanos) {
+            refreshDeliveryWindow(now, windowNanos);
+            return !limitReplySent;
+        }
+
+        private void markLimitReplySent(long now, long windowNanos) {
+            refreshDeliveryWindow(now, windowNanos);
+            limitReplySent = true;
+        }
+
+        private void refreshDeliveryWindow(long now, long windowNanos) {
+            if (!deliveryWindowStarted
+                    || now < deliveryWindowStartedNanos
+                    || now - deliveryWindowStartedNanos >= windowNanos) {
+                deliveryWindowStarted = true;
+                deliveryWindowStartedNanos = now;
+                deliveriesInWindow = 0;
+                limitReplySent = false;
+            }
         }
 
         private boolean canSendNonMemberReply(long now, long cooldownNanos) {

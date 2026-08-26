@@ -47,8 +47,19 @@ public class VkConfigurationValidator {
         if (properties.deliveryUnavailableText() == null || properties.deliveryUnavailableText().isBlank()) {
             throw new IllegalStateException("VK_DELIVERY_UNAVAILABLE_TEXT must not be blank");
         }
+        if (properties.pdfPublicUrl() == null || properties.pdfPublicUrl().isBlank()) {
+            throw new IllegalStateException("VK_PDF_PUBLIC_URL must not be blank");
+        }
         if (properties.uploadPeerId() < 0) {
             throw new IllegalStateException("VK_UPLOAD_PEER_ID must be 0 or a positive long ID");
+        }
+        if (properties.maxDeliveriesPerWindow() <= 0) {
+            throw new IllegalStateException("VK_MAX_DELIVERIES_PER_WINDOW must be greater than 0");
+        }
+        if (properties.deliveryWindow() == null
+                || properties.deliveryWindow().isZero()
+                || properties.deliveryWindow().isNegative()) {
+            throw new IllegalStateException("VK_DELIVERY_WINDOW must be a positive duration");
         }
         if (properties.repeatReplyCooldown() == null || properties.repeatReplyCooldown().isNegative()) {
             throw new IllegalStateException("VK_REPEAT_REPLY_COOLDOWN must be a non-negative duration");

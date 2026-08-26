@@ -20,6 +20,8 @@ public record VkProperties(
         String pdfAttachment,
         String pdfPublicUrl,
         long uploadPeerId,
+        int maxDeliveriesPerWindow,
+        Duration deliveryWindow,
         Duration retryDelay,
         Duration repeatReplyCooldown
 ) {
