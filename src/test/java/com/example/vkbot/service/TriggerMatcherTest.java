@@ -18,8 +18,15 @@ class TriggerMatcherTest {
                     "reply",
                     "already sent",
                     "subscribe first",
+                    "enable messages",
                     "after subscription",
+                    "delivery unavailable",
                     "classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf",
+                    "",
+                    "",
+                    0L,
+                    3,
+                    Duration.ofHours(1),
                     Duration.ofSeconds(3),
                     Duration.ofMinutes(1)
             )

@@ -19,7 +19,14 @@ vk:
   reply-text: ${VK_REPLY_TEXT:Привет! Вот твой файл 👋}
   already-sent-text: ${VK_ALREADY_SENT_TEXT:Файл уже был отправлен вам ранее.}
   non-member-text: ${VK_NON_MEMBER_TEXT:Привет, хочу отправить тебе материал "Где мои силы?", но у тебя нет подписки. Чтобы получить, подпишись на моё сообщество.}
+  messages-disabled-comment-text: ${VK_MESSAGES_DISABLED_COMMENT_TEXT:Не могу отправить файл — у тебя закрыты сообщения от сообщества. Открой диалог https://vk.me/gulina_psy_vk, нажми «Начать» и отправь туда слово «сила».}
   after-subscription-text: ${VK_AFTER_SUBSCRIPTION_TEXT:Вот твой файл}
+  delivery-unavailable-text: ${VK_DELIVERY_UNAVAILABLE_TEXT:Материал временно не удалось отправить. Пожалуйста, попробуй написать «сила» немного позже.}
   pdf-path: ${VK_PDF_PATH:classpath:files/Где_мои_силы_—_Анастасия_Гулина_психолог_КПТ.pdf}
+  pdf-attachment: ${VK_PDF_ATTACHMENT:}
+  pdf-public-url: "${VK_PDF_PUBLIC_URL:https://vk.ru/doc587116608_704085410?hash=Aze0qTDpdibTBmrvpRepFCm7amQ8X5HSQ39oQE9aZ8X&dl=3Y6sgQ7zuqQEG0o5jIvHGLQzZjqNzAQY8U9sG9R9nOg&from_module=vkmsg_desktop}"
+  upload-peer-id: ${VK_UPLOAD_PEER_ID:0}
+  max-deliveries-per-window: ${VK_MAX_DELIVERIES_PER_WINDOW:3}
+  delivery-window: ${VK_DELIVERY_WINDOW:PT1H}
   retry-delay: ${VK_RETRY_DELAY:PT3S}
   repeat-reply-cooldown: ${VK_REPEAT_REPLY_COOLDOWN:PT1M}
